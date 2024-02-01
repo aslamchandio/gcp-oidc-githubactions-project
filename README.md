@@ -76,7 +76,7 @@ gcloud projects add-iam-policy-binding terraform-project-335577 \
 
 
 - 
-```
+``` Service Account List
 
 gcloud iam service-accounts get-iam-policy terraform-oidc-gke-sac@terraform-project-335577.iam.gserviceaccount.com --format=yaml
 
@@ -88,54 +88,85 @@ gcloud projects get-iam-policy terraform-project-335577   \
 
 ```
 
-![App Screenshot](https://github.com/aslamchandio/random-resources/blob/main/images-1/gcp-oidc.jpg)
+![App Screenshot](https://github.com/aslamchandio/random-resources/blob/main/images-1/gcp-oidc2.jpg)
 
 
-### Step-04:
-- Install Jenkins (Long Term Support release)
-- A LTS (Long-Term Support) release is chosen every 12 weeks from the stream of regular releases as the stable release for that time period. It can be installed from the debian-stable apt repository.
-```
-
-sudo wget -O /usr/share/keyrings/jenkins-keyring.asc \
-  https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
-
-echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
-  https://pkg.jenkins.io/debian-stable binary/ | sudo tee \
-  /etc/apt/sources.list.d/jenkins.list > /dev/null
-
-sudo apt update 
-
-sudo apt install Jenkins
-
-sudo systemctl status jenkins
-
-sudo systemctl enable Jenkins --now
-
-ps -aux | grep jenkins
-
-netstat -planet | grep 8080
+## Step 3 — Create a Workload Identity Pool
+- Create a Workload Identity Pool
 
 ```
 
-### Step-05:
-- Change Port of Jenkins 8080 to 8181:(if 8080 Port already runnning in your Network)
-```
 
-sudo systemctl edit jenkins --full
+gcloud iam workload-identity-pools create POOL_ID \
+    --location="global" \
+    --description="DESCRIPTION" \
+    --display-name="DISPLAY_NAME"
 
-Environment="JENKINS_PORT=8080"   to    Environment="JENKINS_PORT=8181"
+gcloud iam workload-identity-pools create github-actions-gke-pool \
+    --project="terraform-project-335577" \
+    --location="global" \
+     --display-name="github-actions-gke-pool" \
+    --description="An Identity Pool forGithub Action For GKE"
 
-sudo systemctl restart jenkins
+gcloud iam workload-identity-pools list --location="global"
 
-systemctl status jenkins
-
-- change port in jenkins UI
-
-Dashboard > Manage Jenkins > System >  
-
-Jenkins Location > Jenkins URL > http://18.77.11.12:8080/  to   http://18.77.11.12:8181/
 
 ```
+
+## Step 4 —  Create a Workload Identity Provider in that pool
+- Create a Workload Identity Provider
+
+```
+gcloud iam workload-identity-pools providers create-oidc PROVIDER_ID \
+    --project="terraform-project-335577" \
+    --location="global" \
+    --workload-identity-pool="POOL_ID" \
+    --issuer-uri="ISSUER" \
+    --allowed-audiences="AUDIENCE" \
+    --attribute-mapping="MAPPINGS" \
+    --attribute-condition="CONDITIONS"
+    --jwk-json-path="JWK_JSON_PATH"
+
+
+gcloud iam workload-identity-pools providers create-oidc github-gke-actions \
+  --project="terraform-project-335577" \
+  --location="global" \
+  --workload-identity-pool="github-actions-gke-pool" \
+  --display-name="My GitHub repo Provider for GKE" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.aud=assertion.aud,attribute.repository=assertion.repository" \
+  --issuer-uri="https://token.actions.githubusercontent.com"
+
+```
+
+google.subject >>>> assertion.sub
+attribute.actor >>>> assertion.actor
+attribute.aud >>>> assertion.aud
+attribute.repository >>>> assertion.repository
+ --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.aud=assertion.aud,attribute.repository=assertion.repository"
+ --issuer-uri="https://token.actions.githubusercontent.com"
+
+![App Screenshot](https://github.com/aslamchandio/random-resources/blob/main/images-1/gcp-oidc1.jpg)
+
+
+## Step 5 —  Allow authentications from the Workload Identity Pool to your Google Cloud Service Account
+
+- Update this value to your GitHub repository.
+```
+export PROJECT_ID="terraform-project-335577"
+export REPO="aslamchandio/gcp-oidc-terraform-gke-github"
+export WORKLOAD_IDENTITY_POOL_ID="projects/276747595521/locations/global/workloadIdentityPools/github-actions-gke-pool"
+
+```
+
+- Note :
+...
+
+ username of github account : aslamchandio
+ github repo name: github-actions-gke-pool
+
+ ...
+
+ 
 
 - Jenkins plugins:
 - Install the following plugins for the demo.
