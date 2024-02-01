@@ -1,0 +1,6 @@
+.terraform/
+.terraform.lock.hcl
+**/creds.json
+**/zzz.txt
+**/.DS_Store
+

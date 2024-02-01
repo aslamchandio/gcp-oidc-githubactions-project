@@ -1,0 +1,50 @@
+name: vpc-gke-ci-prod-destroy
+run-name: ${{ github.actor }} has triggered the pipeline for terraform
+
+on:
+  push:
+    branches:
+      - 'main'
+
+defaults:
+  run:
+    shell: bash
+    working-directory: ./gcp-vpc-gke-production
+permissions:
+  contents: read
+jobs:
+  destroy-dev:
+    runs-on: ubuntu-latest
+    # These permissions are needed too interact with GitHub's OIDC Token endpoint. New
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v4
+      - name: Configure GCP credentials
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          # Value from command: gcloud iam workload-identity-pools providers describe github-actions --workload-identity-pool="github-actions-pool" --location="global"
+          workload_identity_provider: "projects/276747595521/locations/global/workloadIdentityPools/github-actions-gke-pool/providers/github-gke-actions"
+          create_credentials_file: true
+          service_account: "terraform-oidc-gke-sac@terraform-project-22337777.iam.gserviceaccount.com"        
+          token_format: "access_token"
+          access_token_lifetime: "120s"
+      - name: Echo stuff
+        run: printenv
+      - name: Setup Terraform with specified version on the runner
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.7.0
+
+      # Terraform init    
+      - name: Terraform init
+        id: init
+        run: terraform init
+      
+      # Destroy All Resources   
+      - name: Terraform Destroy
+        id : destroy
+        run: terraform destroy -auto-approve 
