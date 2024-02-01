@@ -1,54 +1,95 @@
-# GitOPS ArgoCD EKS Project
+# Enabling Keyless Authentication from GitHub Actions with OpenID Connect (OIDC) 
 
-![App Screenshot](https://github.com/aslamchandio/random-resources/blob/main/images/Main_Image.jpeg)
+![App Screenshot](https://github.com/aslamchandio/random-resources/blob/main/images-1/0_mzZELDcSxD2ACAWl.webp)
 
-## What this does?
-This repo along with https://github.com/aslamchandio/kubernetesmanifest.git creates a Jenkins pipeline with GitOps to deploy code into a Kubernetes cluster. CI part is done via Jenkins and CD part via ArgoCD (GitOps).
+![App Screenshot](https://github.com/aslamchandio/random-resources/blob/main/images-1/1_GitHub_Actions.max-2600x2600.jpg)
 
-## Jenkins installation on Ubuntu 22.3-LTS
+## Configuring OpenID Connect in Google Cloud Platform
+Overview:
+
+OpenID Connect (OIDC) allows your GitHub Actions workflows to access resources in Google Cloud Platform (GCP), without needing to store the GCP credentials as long-lived GitHub secrets.
+This guide gives an overview of how to configure GCP to trust GitHub's OIDC as a federated identity, and includes a workflow example for the google-github-actions/auth action that uses tokens to authenticate to GCP and access resources.
+
+## Step 1 — Create a repo on Github
+
+gcp-oidc-terraform-gke-github (Private)
 
 ### References
-- https://www.jenkins.io/doc/tutorials/tutorial-for-installing-jenkins-on-AWS/
-- https://www.jenkins.io/doc/book/installing/linux/#debianubuntu
+- https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-google-cloud-platform
 
-### Step-01: 
-- Update Ubuntu
+
+## Step 2 — Create OIDC Provider in GCP Cloud for Github Actions
+
+### Step-01: :
+- Create Service Account
 ```
-sudo apt update -y
-sudo apt upgrade -y
-sudo apt autoclean -y
-sudo apt install zip unzip git nano vim wget net-tools vim nano htop tree  -y
+gcloud iam service-accounts create terraform-oidc-gke-sac \
+    --project "terraform-project-335577" \
+    --description="Service Account For OIDC Github Actions for GKE" \
+    --display-name="terraform-oidc-gke-sac"
 
-```
-### Step-02:
-- DEFAULT RULES
-```
-
-sudo ufw status verbose
-
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-
-
-sudo ufw allow ssh
-sudo ufw allow http
-sudo ufw allow https
-sudo ufw allow 8080
-
-sudo ufw enable
-sudo ufw status verbose
+gcloud iam service-accounts list
 
 ```
+### Step-02: grant service account an IAM role on your project & resources
+Note : In my case i am creating vpc, vm with custom service account & google kubernetes engine 
+ 
 
-### Step-03:
-- Update & Install Java JDK
+- Service Account Membership
 ```
 
-sudo apt update
-sudo apt install fontconfig openjdk-17-jre
-java -version
+gcloud projects add-iam-policy-binding terraform-project-335577 \
+  --member="serviceAccount:terraform-oidc-gke-sac@terraform-project-335577.iam.gserviceaccount.com" \
+  --role="roles/compute.admin"
+
+gcloud projects add-iam-policy-binding terraform-project-335577 \
+  --member="serviceAccount:terraform-oidc-gke-sac@terraform-project-335577.iam.gserviceaccount.com" \
+  --role="roles/container.admin"
+
+gcloud projects add-iam-policy-binding terraform-project-335577 \
+  --member="serviceAccount:terraform-oidc-gke-sac@terraform-project-335577.iam.gserviceaccount.com" \
+  --role="roles/storage.admin"
+
+gcloud projects add-iam-policy-binding terraform-project-335577 \
+  --member="serviceAccount:terraform-oidc-gke-sac@terraform-project-335577.iam.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountAdmin"
+
+gcloud projects add-iam-policy-binding terraform-project-335577 \
+  --member="serviceAccount:terraform-oidc-gke-sac@terraform-project-335577.iam.gserviceaccount.com" \
+  --role="roles/iam.roleAdmin"
+
+
+gcloud projects add-iam-policy-binding terraform-project-335577 \
+  --member="serviceAccount:terraform-oidc-gke-sac@terraform-project-335577.iam.gserviceaccount.com" \
+  --role="roles/resourcemanager.projectIamAdmin"
+
+
+gcloud projects add-iam-policy-binding terraform-project-335577 \
+  --member="serviceAccount:terraform-oidc-gke-sac@terraform-project-335577.iam.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountTokenCreator"
+
+gcloud projects add-iam-policy-binding terraform-project-335577 \
+  --member="serviceAccount:terraform-oidc-gke-sac@terraform-project-335577.iam.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountUser" 
 
 ```
+
+
+- 
+```
+
+gcloud iam service-accounts get-iam-policy terraform-oidc-gke-sac@terraform-project-335577.iam.gserviceaccount.com --format=yaml
+
+
+gcloud projects get-iam-policy terraform-project-335577   \
+--flatten="bindings[].members" \
+--format='table(bindings.role)' \
+--filter="bindings.members:terraform-oidc-gke-sac@terraform-project-335577.iam.gserviceaccount.com" 
+
+```
+
+![App Screenshot](https://github.com/aslamchandio/random-resources/blob/main/images-1/gcp-oidc.jpg)
+
 
 ### Step-04:
 - Install Jenkins (Long Term Support release)
