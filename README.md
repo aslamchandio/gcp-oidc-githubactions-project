@@ -445,6 +445,23 @@ git push -u origin main
 ```
 
 
+```
+
+git branch --list   or git branch
+
+git branch prod  (Create dev branch)       or       git checkout -b prod
+
+git checkout prod
+
+git log --oneline
+
+git  push origin prod
+
+```
+
+
+
+
 ### References
 - https://cloud.google.com/blog/products/identity-security/enabling-keyless-authentication-from-github-actions
 - https://github.com/google-github-actions/auth?tab=readme-ov-file#indirect-wif
