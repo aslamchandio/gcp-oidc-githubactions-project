@@ -14,7 +14,10 @@ This guide gives an overview of how to configure GCP to trust GitHub's OIDC as a
 
 gcp-oidc-terraform-gke-github (Private)
 
+
 ### References
+- https://cloud.google.com/blog/products/identity-security/enabling-keyless-authentication-from-github-actions
+- https://github.com/google-github-actions/auth?tab=readme-ov-file#indirect-wif
 - https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-google-cloud-platform
 
 
@@ -133,17 +136,32 @@ gcloud iam workload-identity-pools providers create-oidc github-gke-actions \
   --location="global" \
   --workload-identity-pool="github-actions-gke-pool" \
   --display-name="My GitHub repo Provider for GKE" \
-  --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.aud=assertion.aud,attribute.repository=assertion.repository" \
-  --issuer-uri="https://token.actions.githubusercontent.com"
+  --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository, attribute.aud=assertion.aud,attribute.repository_owner=assertion.repository_owner" \
+  --attribute-condition="assertion.repository_owner == 'aslamchandio'" \
+  --issuer-uri="https://token.actions.githubusercontent.com" 
+
+    --attribute-mapping="google.subject=assertion.sub,
+                      attribute.actor=assertion.actor,
+                      attribute.aud=assertion.aud,
+                      attribute.repository=assertion.repository,
+                      attribute.repository_owner=assertion.repository_owner"
+
+                      
+  --attribute-condition="assertion.repository_owner == 'aslamchandio'" 
 
 ```
+For --attribute-mapping
 
 google.subject >>>> assertion.sub
 attribute.actor >>>> assertion.actor
 attribute.aud >>>> assertion.aud
 attribute.repository >>>> assertion.repository
- --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.aud=assertion.aud,attribute.repository=assertion.repository"
- --issuer-uri="https://token.actions.githubusercontent.com"
+attribute.repository=assertion.repository
+attribute.repository_owner=assertion.repository_owner
+
+For --attribute-condition
+
+assertion.repository_owner == 'aslamchandio'  (aslamchandio is a github owner account)
 
 ![App Screenshot](https://github.com/aslamchandio/random-resources/blob/main/images-1/gcp-oidc1.jpg)
 
@@ -197,18 +215,22 @@ gcloud iam workload-identity-pools providers describe my-github-actions \
 
 projects/276747595521/locations/global/workloadIdentityPools/my-github-actions-pool/providers/my-github-actions 
 
+WORKLOAD_IDENTITY_PROVIDER   projects/276747595521/locations/global/workloadIdentityPools/my-github-actions-pool/providers/my-github-actions 
+SERVICE_ACCOUNT               terraform-oidc-gcp-sa@terraform-project-455409.iam.gserviceaccount.com
+
 ```
 
 ## Step 7 —  Use this value as the workload_identity_provider value in the GitHub Actions YAML
-- vpc-ci-prod-create.yaml 
-- vpc-ci-prod-create.yaml 
+- cicd-gcp-prod-create.yml 
+- cicd-gcp-prod-destroy.yml
 
 Note: # Value from command: gcloud iam workload-identity-pools providers describe github-actions --workload-identity-pool="github-actions-pool" --location="global"
 
 ```
- workload_identity_provider: "projects/276747595521/locations/global/workloadIdentityPools/github-actions-gke-pool/providers/github-gke-actions"
+ # Value from command: gcloud iam workload-identity-pools providers describe github-actions --workload-identity-pool="github-actions-pool" --location="global"
+          workload_identity_provider: '${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}'
           create_credentials_file: true
-          service_account: "terraform-oidc-gke-sac@terraform-project-335577.iam.gserviceaccount.com"        
+          service_account: '${{ secrets.SERVICE_ACCOUNT }}'    
           token_format: "access_token"
           access_token_lifetime: "120s"
 
@@ -217,25 +239,20 @@ Note: # Value from command: gcloud iam workload-identity-pools providers describ
 ![App Screenshot](https://github.com/aslamchandio/random-resources/blob/main/images-1/gcp-oidc3.jpg)
 
 ## Step 8 — Github Actions Files
-- vpc-ci-dev-create.yml (For Creating GCP Resources)
+- cicd-gcp-prod-create.yml  (For Creating GCP Resources)
 
- Name: vpc-gke-ci-prod-create
- Branch: GitHub Action Trigger always run from Main branch
- Run Env: Latest Ubuntu with terraform install
-
- ```
 name: vpc-gke-ci-prod-create
 run-name: ${{ github.actor }} has triggered the pipeline for Terraform
 
 on:
   push:
     branches:
-      - 'main'
+      - 'prod'
 
 defaults:
   run:
     shell: bash
-    working-directory: ./gcp-vpc-gke-production
+    working-directory: ./gcp-vpc-gke-custom-module/root
 permissions:
   contents: read
 
@@ -244,27 +261,29 @@ jobs:
     runs-on: ubuntu-latest
     # These permissions are needed too interact with GitHub's OIDC Token endpoint. New
     permissions:
-      id-token: write 
-      contents: read         
+      contents: read
+      id-token: write       
     steps:
       - name: "Checkout"
-        uses: actions/checkout@v3
+        uses: 'actions/checkout@v4'
+
       - name: Configure GCP credentials
         id: auth
         uses: google-github-actions/auth@v2
         with:
           # Value from command: gcloud iam workload-identity-pools providers describe github-actions --workload-identity-pool="github-actions-pool" --location="global"
-          workload_identity_provider: "projects/276747595521/locations/global/workloadIdentityPools/github-actions-gke-pool/providers/github-gke-actions"
+          workload_identity_provider: '${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}'
           create_credentials_file: true
-          service_account: "terraform-oidc-gke-sac@terraform-project-335577.iam.gserviceaccount.com"        
+          service_account: '${{ secrets.SERVICE_ACCOUNT }}'    
           token_format: "access_token"
           access_token_lifetime: "120s"
+          
       - name: Echo stuff
         run: printenv
       - name: Setup Terraform with specified version on the runner
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.7.0
+          terraform_version: 1.11.0
           terraform_wrapper: true
              
       # Initialize a new or existing Terraform working directory by creating initial files, loading any remote state, downloading mo
@@ -295,29 +314,24 @@ jobs:
       # On push to "main", build or change infrastructure according to Terraform configuration files
       # Note: It is recommended to set up a required "strict" status check in your repository for "Terraform Cloud". See the documentation on "strict" required status checks for more information: https://help.github.com/en/github/administering-a-repository/types-of-required-status-checks
       - name: Terraform Apply
-        run: terraform apply -auto-approve 
-
+        run: terraform apply -auto-approve  
+      
 ```
 
-- vpc-ci-dev-destroy.yml (For Destroying GCP Resources)
+- cicd-gcp-prod-destroy.yml (For Destroying GCP Resources)
 
-Name: vpc-gke-ci-prod-destroy
-Branch: GitHub Action Trigger always run from Main branch
-Run Env: Latest Ubuntu with terraform install
-
-```
 name: vpc-gke-ci-prod-destroy
 run-name: ${{ github.actor }} has triggered the pipeline for terraform
 
 on:
   push:
     branches:
-      - 'main'
+      - 'prod'
 
 defaults:
   run:
     shell: bash
-    working-directory: ./gcp-vpc-gke-production
+    working-directory: ./gcp-vpc-gke-custom-module/root
 permissions:
   contents: read
 jobs:
@@ -325,27 +339,29 @@ jobs:
     runs-on: ubuntu-latest
     # These permissions are needed too interact with GitHub's OIDC Token endpoint. New
     permissions:
-      id-token: write
       contents: read
+      id-token: write
     steps:
       - name: "Checkout"
-        uses: actions/checkout@v4
+        uses: 'actions/checkout@v4'
+
       - name: Configure GCP credentials
         id: auth
         uses: google-github-actions/auth@v2
         with:
           # Value from command: gcloud iam workload-identity-pools providers describe github-actions --workload-identity-pool="github-actions-pool" --location="global"
-          workload_identity_provider: "projects/276747595521/locations/global/workloadIdentityPools/github-actions-gke-pool/providers/github-gke-actions"
+          workload_identity_provider: '${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}'
           create_credentials_file: true
-          service_account: "terraform-oidc-gke-sac@terraform-project-335577.iam.gserviceaccount.com"        
+          service_account: '${{ secrets.SERVICE_ACCOUNT }}'   
           token_format: "access_token"
           access_token_lifetime: "120s"
+          
       - name: Echo stuff
         run: printenv
       - name: Setup Terraform with specified version on the runner
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.7.0
+          terraform_version: 1.11.0
 
       # Terraform init    
       - name: Terraform init
@@ -357,6 +373,7 @@ jobs:
         id : destroy
         run: terraform destroy -auto-approve 
 
+
 ```
 
 
@@ -364,31 +381,24 @@ jobs:
 
 ```
 
+# Terraform Settings Block
 terraform {
-  required_version = "~> 1.7.0" # which means any version equal & above 0.14 like 0.15, 0.16 etc and < 1.xx 
+  required_version = "~> 1.11.0"
   required_providers {
     google = {
-      source = "hashicorp/google"
-      #version = "5.13.0"
-      version = "~> 5.0"
+      source  = "hashicorp/google"
+      version = "~> 6.28.0"
     }
-    kubernetes = {
-      source = "hashicorp/kubernetes"
-    }
-
   }
+}
 
+terraform {
   backend "gcs" {
-    bucket = "aslam-terraform-storage"
-    prefix = "prod/gke-vpc-module-github/"
+    bucket = "aslam-tfstate-bucket"
+    prefix = "dev/fully-pvt-gke-cluster-cm-cidr"
   }
 }
 
-provider "google" {
-  # Configuration options
-  project = var.project_id
-  region  = var.region
-}
 
 ```
 
@@ -416,7 +426,7 @@ provider "google" {
 ```
 
 
-## Step 10 —  Push Terraform Code & Github Action files into Remote Repo
+## Step 11 —  Push Terraform Code & Github Action files into Remote Repo
 
 ![App Screenshot](https://github.com/aslamchandio/random-resources/blob/main/images-1/gcp-oidc6.jpg)
 
@@ -439,6 +449,7 @@ git push -u origin main
 - https://cloud.google.com/blog/products/identity-security/enabling-keyless-authentication-from-github-actions
 - https://github.com/google-github-actions/auth?tab=readme-ov-file#indirect-wif
 - https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-google-cloud-platform
+
 
 
 

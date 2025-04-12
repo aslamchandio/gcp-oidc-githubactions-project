@@ -1,0 +1,75 @@
+name: vpc-gke-ci-prod-create
+run-name: ${{ github.actor }} has triggered the pipeline for Terraform
+
+on:
+  push:
+    branches:
+      - 'prod'
+
+defaults:
+  run:
+    shell: bash
+    working-directory: ./gcp-vpc-gke-custom-module/root
+permissions:
+  contents: read
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    # These permissions are needed too interact with GitHub's OIDC Token endpoint. New
+    permissions:
+      contents: read
+      id-token: write       
+    steps:
+      - name: "Checkout"
+        uses: 'actions/checkout@v4'
+
+      - name: Configure GCP credentials
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          # Value from command: gcloud iam workload-identity-pools providers describe github-actions --workload-identity-pool="github-actions-pool" --location="global"
+          workload_identity_provider: '${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}'
+          create_credentials_file: true
+          service_account: '${{ secrets.SERVICE_ACCOUNT }}'    
+          token_format: "access_token"
+          access_token_lifetime: "120s"
+          
+      - name: Echo stuff
+        run: printenv
+      - name: Setup Terraform with specified version on the runner
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.11.0
+          terraform_wrapper: true
+             
+      # Initialize a new or existing Terraform working directory by creating initial files, loading any remote state, downloading mo
+      - name: Terraform init
+        id: init
+        run: terraform init
+      
+      # Checks that all Terraform configuration files adhere to a canonical format
+      - name: Terraform Format
+        id: fmt
+        run:  terraform fmt -recursive -write=true 
+
+      # Validate Code
+      - name: Terraform validate
+        id: validate
+        run: terraform validate
+
+      # Generates an execution plan for Terraform
+      - name: Terraform plan
+        id: plan
+        run: terraform plan 
+        continue-on-error: true
+
+      - name: Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+      # On push to "main", build or change infrastructure according to Terraform configuration files
+      # Note: It is recommended to set up a required "strict" status check in your repository for "Terraform Cloud". See the documentation on "strict" required status checks for more information: https://help.github.com/en/github/administering-a-repository/types-of-required-status-checks
+      - name: Terraform Apply
+        run: terraform apply -auto-approve  
+      
